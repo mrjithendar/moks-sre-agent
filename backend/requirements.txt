@@ -1,5 +1,5 @@
 # Pinned runtime dependencies for the image (tested together on Python 3.11 and 3.12).
-fastapi==0.163.1
+fastapi==0.165.0
 starlette==1.10.0
 uvicorn[standard]==0.54.0
 SQLAlchemy[asyncio]==2.1.9
