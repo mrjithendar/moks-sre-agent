@@ -182,9 +182,9 @@ on each connector.
 In the **tools** repository:
 
 1. Prometheus: add the job from [../deploy/grafana/prometheus-scrape.yaml](../deploy/grafana/prometheus-scrape.yaml).
-2. Grafana: add the dashboards in [../deploy/grafana/dashboards/](../deploy/grafana/dashboards/) (built by
-   `deploy/grafana/build.py`; [OBSERVABILITY.md](OBSERVABILITY.md#dashboards-and-alerts)) as a `grafana-dashboards-moks`
-   ConfigMap, mounted the same way as `grafana-dashboards-jithendar`.
+2. Grafana: the MOKS dashboards are in [mrjithendar/monitoring](https://github.com/mrjithendar/monitoring)
+   (`dashboards/public/MOKS/`, built by its `generators/moks/build.py`), which deploys them to mk4;
+   [OBSERVABILITY.md](OBSERVABILITY.md#dashboards-and-alerts).
 3. Alloy: add `moks` to `discovery.kubernetes.pods.namespaces`. The chart already grants Alloy
    read access in `moks-sre`.
 

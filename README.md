@@ -41,7 +41,7 @@ deploy/argocd     AppProjects, root and child Applications per environment
 deploy/secrets    Secret templates (no real values)
 deploy/terraform  AWS: ECR repo, GitHub OIDC CI role, MOKS runtime IAM user (Bedrock)
 deploy/rbac, iam  Kubernetes RBAC and AWS IAM examples
-deploy/grafana    Grafana dashboards (build.py), alert rules and the Prometheus scrape job
+deploy/grafana    Alert rules and the Prometheus scrape job (dashboards: mrjithendar/monitoring)
 lab/              Four reproducible incidents with expected evidence and fixes
 dev/              Local run script and seed
 scripts/          create-secrets(-hetzner), backup, deploy-hetzner, e2e-kind (MOKS end to end on a kind cluster)

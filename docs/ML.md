@@ -485,7 +485,7 @@ This is yours to run. It writes to mk4, and Argo CD reads `origin/master`.
    Settings > Machine learning > Models > Make champion, one per workload and node.
 5. **Scheduled training**: `ml.training.enabled: true` and `ml.anomaly.namespaces: "mk4:<ns>,mk4:_node"`. Seven
    algorithms per cohort take longer than two did: watch the first run against `activeDeadlineSeconds` (3600).
-6. **Dashboard and alerts**: dashboard MOKS · ML anomaly detection is `deploy/grafana/dashboards/moks-ml.json`; the `moks-ml`
+6. **Dashboard and alerts**: dashboard MOKS · ML anomaly detection is `moks-ml` in mrjithendar/monitoring (`generators/moks/build.py`); the `moks-ml`
    group in `deploy/grafana/moks-alerts.yaml` is about MOKS's own models (an invalid artifact, a champion to review,
    context that cannot be read), never about workloads. Validate the rules with the Prometheus pod's promtool before
    adding them.
