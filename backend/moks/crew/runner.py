@@ -7,7 +7,7 @@ Everything after that (claim validation, cause verification, relevance, the stor
 the conversation) is the same code every investigation passes.
 
 Threads. CrewAI runs its agents' model and tool calls synchronously in a worker thread, even under
-akickoff() (checked against crewai 1.15.41). MOKS's database session, its providers and its executor
+akickoff() (checked against crewai 1.15.44). MOKS's database session, its providers and its executor
 belong to the event loop, so each call is handed back to the loop (Bridge) and the thread waits for it.
 Nothing CrewAI does touches the database or the network itself.
 

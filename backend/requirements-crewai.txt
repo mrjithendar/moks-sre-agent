@@ -1,9 +1,9 @@
 # The optional CrewAI investigation (docs/crewai-investigation.md). Installed only when the image is
-# built with --build-arg MOKS_CREWAI=true. crewai 1.15.41 requires pydantic<2.13, so the Dockerfile drops
+# built with --build-arg MOKS_CREWAI=true. crewai 1.15.44 requires pydantic<2.13, so the Dockerfile drops
 # requirements.txt's pydantic pin and lets crewai's own bound pick the newest 2.12.x. pydantic is deliberately
 # not pinned here: Dependabot bumps every pin in /backend together (PR #23 moved it to 2.14.3 and broke the build).
-# crewai's own hard dependencies include chromadb, lancedb, onnxruntime, openai and instructor. MOKS never
-# instantiates their clients (memory, knowledge and planning are off), but they are in the image.
+# crewai's own hard dependencies include qdrant-client, lancedb, openai and instructor (chromadb became optional
+# in 1.15.42). MOKS never instantiates their clients (memory, knowledge and planning are off), but they are in the image.
 # Exactly the version moks/crew/__init__.py PINNED names: MOKS refuses any other (docs and source are checked
 # per release). Dependabot proposes crewai in its own group; raise PINNED and this pin together, after that check.
 crewai==1.15.44

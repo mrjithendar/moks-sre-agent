@@ -17,10 +17,10 @@ import tempfile
 from importlib import metadata
 from typing import Any
 
-PINNED = "1.15.41"  # backend/requirements-crewai.txt; checked against that version's docs and source
+PINNED = "1.15.44"  # backend/requirements-crewai.txt; checked against that version's docs and source
 
 # Set before crewai is imported. CREWAI_DISABLE_TELEMETRY and CREWAI_DISABLE_TRACKING stop the anonymous usage
-# spans to telemetry.crewai.com:4319; CREWAI_TRACING_ENABLED=false stops AMP trace upload (docs v1.15.41 telemetry.mdx).
+# spans to telemetry.crewai.com:4319; CREWAI_TRACING_ENABLED=false stops AMP trace upload (docs v1.15.44 telemetry.mdx).
 # OTEL_SDK_DISABLED is deliberately not used: it would switch MOKS's own tracing off as well.
 TELEMETRY_OFF = {"CREWAI_DISABLE_TELEMETRY": "true", "CREWAI_DISABLE_TRACKING": "true", "CREWAI_TRACING_ENABLED": "false"}
 
