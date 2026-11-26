@@ -111,12 +111,11 @@ Grafana folder MOKS has six dashboards, linked to each other from the top of eac
 | MOKS · Jobs, connectors and data (`moks-platform`) | Job queue, connectors, approvals and actions, database and backups, processes, the trace pipeline |
 | MOKS · ML anomaly detection (`moks-ml`) | MOKS's own models in shadow mode: scoring, flags, drift, champions to review, correlation |
 
-- They are built by `deploy/grafana/build.py` into `deploy/grafana/dashboards/moks-*.json`. Edit the script, run
-  `python3 deploy/grafana/build.py`, and commit both: `tests/test_grafana_dashboards.py` fails when they disagree,
-  when a panel reads a metric or label MOKS does not export, when panels overlap, and when a metric is on no dashboard.
-- Copy the JSON files to the tools repository's `deploy/minikube/observability/grafana/dashboards/` (the chart loads
-  every `moks-*.json` there into the MOKS folder). Check new queries against mk4's Prometheus before copying
-  ([mk4 queries](#useful-queries)); an empty panel usually means the event has not happened in the time range.
+- They live in [mrjithendar/monitoring](https://github.com/mrjithendar/monitoring), built by its
+  `generators/moks/build.py` into `dashboards/public/MOKS/` (the public Grafana org): edit the script there, run it,
+  and merge; that repository's workflow deploys them. A new metric here reaches a dashboard only through a change
+  there. Its `scripts/audit_live.py` runs every query against mk4's Prometheus and Loki; an empty panel usually means
+  the event has not happened in the time range ([mk4 queries](#useful-queries)).
 - The scrape job is pod discovery (`deploy/grafana/prometheus-scrape.yaml`): `component` and the pod name come from it.
   The DNS job it replaced gave every series a pod IP only. The Component variable's "All" is `.*`, which also matches
   series without the label. Prometheus scrapes through its own sidecar, so every pod it scrapes needs a headless Service on
