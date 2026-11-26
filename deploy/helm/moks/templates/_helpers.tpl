@@ -60,6 +60,17 @@ envFrom:
   - secretRef: {name: {{ include "moks.secretName" . }}}
 {{- end -}}
 
+{{/* RAG_API_URL and RAG_BEARER_TOKEN for the pods that search or feed moks-rag (docs/SHARED_KNOWLEDGE.md). Optional
+     keys: without the Secret the variables are unset and the integration reports itself not configured. */}}
+{{- define "moks.sharedKnowledgeEnv" -}}
+{{- with .Values.sharedKnowledge }}{{ if .enabled }}
+- name: RAG_API_URL
+  valueFrom: {secretKeyRef: {name: {{ .secret }}, key: {{ .urlKey }}, optional: true}}
+- name: RAG_BEARER_TOKEN
+  valueFrom: {secretKeyRef: {name: {{ .secret }}, key: {{ .tokenKey }}, optional: true}}
+{{- end }}{{ end }}
+{{- end -}}
+
 {{- define "moks.serviceAccount" -}}
 {{- if .root.Values.secrets.split -}}moks-{{ .component }}{{- else -}}{{ .root.Values.serviceAccount.name }}{{- end -}}
 {{- end -}}

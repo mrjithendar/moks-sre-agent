@@ -329,6 +329,13 @@ the kubernetes repository, so the old copy keeps serving until that change is ap
    kubectl get pv | grep data-moks-opensearch-0          # delete it by name
    ```
 
+## Connecting to the shared moks-rag service
+
+Alert triage and root-cause analysis can also search the shared SRE knowledge base in namespace `rag`. On mk4:
+create Secret `moks-rag-client` in `moks-sre` from `rag/rag-secrets`, restart api, worker and crewai, check with
+`moks shared-kb status`, then load the documents with `moks shared-kb sync --all`. Steps, ingestion and what happens
+when moks-rag is down: [SHARED_KNOWLEDGE.md](SHARED_KNOWLEDGE.md).
+
 ## Using Pinecone for vectors
 
 Pinecone can hold the vectors instead of pgvector, with keyword search staying in PostgreSQL. It needs no pods.

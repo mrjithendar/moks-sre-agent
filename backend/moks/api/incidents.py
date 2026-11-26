@@ -191,6 +191,12 @@ async def approve_postmortem(iid: uuid.UUID, request: Request, ctx: AuthContext 
 
     await learning.capture_incident(db, inc, env.name, ctx.user.id)  # the approved outcome similar-incident search and datasets read
     await add_event(db, inc.id, "note", {"text": "Postmortem approved and added to the knowledge base", "document": doc.path}, ctx.user.id)
+    from ..rag import shared
+
+    if shared.enabled():  # and to the shared SRE knowledge base, by a job retried while moks-rag is down (rag/shared_ingest.py)
+        from .. import jobs
+
+        jobs.add(db, "shared_kb_push", {"incident_id": str(inc.id)}, dedupe_key=f"shared_kb_push:{inc.id}", created_by=ctx.user.id)
     await audit.record(db, action="incident.postmortem_approve", actor_id=ctx.user.id, actor_email=ctx.user.email, resource_type="incident",
                        resource_id=str(inc.id), environment=env.name, namespace=inc.namespace)
     return await incident_detail(db, inc)

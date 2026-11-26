@@ -31,7 +31,7 @@ SourceType = Literal["kubernetes", "metrics", "logs", "traces", "deployment", "g
 _EXACT: dict[str, str] = {
     "k8s_pod_logs": "logs", "k8s_rollout_history": "deployment", "k8s_argocd_status": "deployment", "git_compare_deployment": "deployment",
     "k8s_config_audit": "configuration", "k8s_services": "dependency", "k8s_ingresses": "dependency", "k8s_dns_health": "dependency",
-    "prom_alerts": "alert", "grafana_alerts": "alert", "cw_alarms": "alert", "kb_search": "knowledge", "similar_incidents": "historical_incident",
+    "prom_alerts": "alert", "grafana_alerts": "alert", "cw_alarms": "alert", "kb_search": "knowledge", "shared_kb_search": "knowledge", "similar_incidents": "historical_incident",
     "ml_observations": "ml_anomaly", "ml_anomalies": "ml_anomaly", "prom_targets": "metrics", "cw_logs_query": "logs", "cw_log_groups": "logs", "cw_metric": "metrics", "cw_metrics_list": "metrics",
 }
 _PREFIX: tuple[tuple[str, str], ...] = (("trace_", "traces"), ("k8s_", "kubernetes"), ("eks_", "kubernetes"), ("prom_", "metrics"), ("grafana_", "metrics"),

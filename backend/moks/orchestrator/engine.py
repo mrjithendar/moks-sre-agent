@@ -34,7 +34,7 @@ from ..db import session_scope
 from ..auth.revocation import CHECK_SECONDS as WATCH_SECONDS, AccessGuard, AccessRevoked
 from ..llm.lc import MoksChatModel
 from ..llm.providers import LLMError, provider_for
-from ..models import Environment, Evidence, Investigation, InvestigationCheckpoint, InvestigationEvent, LLMConfig, LLMUsage, RoleBinding, SkillVersion, User
+from ..models import AlertEvent, Environment, Evidence, Incident, Investigation, InvestigationCheckpoint, InvestigationEvent, LLMConfig, LLMUsage, RoleBinding, SkillVersion, User
 from opentelemetry import trace as trace_api
 
 from ..observability import CREWAI_RUNS, INVESTIGATION_DURATION, INVESTIGATIONS, INVESTIGATIONS_RUNNING, bind, bound, continue_trace, error_fields, llm_answer_unused, mark_failed, span
@@ -44,7 +44,7 @@ from ..scope import ScopeError, effective_scope
 from ..tools.contracts import ToolContext
 from ..tools.executor import ToolExecutor, ToolOutcome, tools_for_planner
 from ..tools.lc import as_tools
-from . import graph, knowledge, prompts, relevance
+from . import graph, knowledge, prompts, relevance, shared_knowledge
 from .. import conversations
 from ..diagnosis.logs import last_failure
 from ..llm.budget import CHARS_PER_TOKEN
@@ -163,6 +163,14 @@ class Investigator:
         self.llm_failures: tuple = (Exception,)
         self.knowledge: dict[str, Any] = knowledge.new_state()  # the retrieval stage: queries, passages, why each was or was not used
         self.similar: dict[str, Any] = {"status": "not_attempted", "calls": 0}  # similar approved incidents (moks/ml/similar.py)
+        self.shared_kb: dict[str, Any] = shared_knowledge.new_state()  # the shared moks-rag knowledge base (orchestrator/shared_knowledge.py)
+        # What started this run, for the shared knowledge search: the trigger, the incident and the alert that opened it.
+        self.trigger: str | None = None
+        self.incident_id: uuid.UUID | None = None
+        self.incident_info: dict[str, Any] | None = None
+        self.alert_info: dict[str, Any] | None = None
+        self.crew_request: dict[str, Any] | None = None
+        self.crew_workload: str | None = None
         self.partial_payload: dict[str, Any] | None = None  # what an engine leaves for the partial report if the run is cancelled or times out
         self.started = time.monotonic()
 
@@ -173,7 +181,8 @@ class Investigator:
     def tool_budget(self) -> int:
         """Tool calls this request may use: the intent's budget, never above the global ceiling."""
         cap = self.settings.max_tool_calls
-        extra = self.knowledge.get("calls", 0) + self.similar.get("calls", 0)  # the knowledge stage and the similar-incident lookup have their own allowance
+        # the knowledge stage, the similar-incident lookup and the shared knowledge search have their own allowance
+        extra = self.knowledge.get("calls", 0) + self.similar.get("calls", 0) + self.shared_kb.get("calls", 0)
         if self.request is None:
             return cap + extra
         own = (self.settings.intent_tool_budgets or {}).get(self.request.primary) or cap
@@ -365,7 +374,7 @@ class Investigator:
             "version": CHECKPOINT_VERSION, "completed": self.completed_nodes, "ref": self.ref, "tool_calls": self.tool_calls, "evidence_refs": [e["ref"] for e in self.evidence],
             "graph": {k: (report.model_dump() if k == "report" and report is not None else state.get(k)) for k in ("namespace", "round", "calls", "use_rules", "finished", "mode", "report", "workflow",
                                                                                                                  "crewai")},
-            "request": self.request.model_dump() if self.request else None, "trace": self.trace, "gaps": self.gaps, "retrieval_notes": self.retrieval_notes, "knowledge": knowledge.for_checkpoint(self.knowledge),
+            "request": self.request.model_dump() if self.request else None, "trace": self.trace, "gaps": self.gaps, "retrieval_notes": self.retrieval_notes, "knowledge": knowledge.for_checkpoint(self.knowledge), "shared_kb": self.shared_kb,
             "similar": self.similar, "skill_recommendations": self.skill_recommendations, "skill_eligible": self.skill_eligible, "sources": [{k: v for k, v in x.items() if k != "text"} for x in self.sources], "shared_findings": self.shared_findings, "excluded": self.excluded,
             "notes": self.notes, "findings": self.findings, "calls_seen": sorted(self.calls_seen), "rejected": self.rejected[-20:], "focus_namespace": self.focus_namespace,
             "skills": [{"digest": sk.digest, "score": score, "reasons": why} for sk, score, why in self.skills], "skill_runs": self.skill_runs, "skill_rejected": self.skill_rejected,
@@ -418,6 +427,7 @@ class Investigator:
         self.gaps, self.retrieval_notes = cp.get("gaps") or [], cp.get("retrieval_notes") or []
         self.knowledge = knowledge.restore(self, cp.get("knowledge"))  # completed stages are not searched again
         self.similar = cp.get("similar") or self.similar
+        self.shared_kb = cp.get("shared_kb") or self.shared_kb  # searches already run are read back from their evidence, not run again
         self.skill_recommendations, self.skill_eligible = cp.get("skill_recommendations") or {}, cp.get("skill_eligible") or []
         self.shared_findings, self.excluded = cp.get("shared_findings") or [], cp.get("excluded") or []
         by_ref = {e["ref"]: e.get("data") for e in self.evidence}
@@ -500,6 +510,7 @@ class Investigator:
                 self.conversation_namespace = conv.namespace if conv and conv.id != inv.id else None
             queued = (await db.execute(select(InvestigationEvent.payload).where(InvestigationEvent.investigation_id == inv.id, InvestigationEvent.seq == 0))).scalar_one_or_none() or {}
             crew_request = queued.get("crewai") if isinstance(queued.get("crewai"), dict) else None
+            await self._triage_context(db, inv, crew_request)
             self.environment_info = {"name": env.name, "is_production": bool(env.is_production), "reason": queued.get("environment_reason"), "namespace_reason": queued.get("namespace_reason")}
             self._window = (t_from, t_to)
             env_name = env.name
@@ -538,6 +549,7 @@ class Investigator:
                 final = await self._crew(crew_request, executor, ctx, question, namespace, scope_info, provider, llm_cfg, resumed)
             else:
                 final = await graph.run(self, executor, ctx, question, namespace, scope_info, provider, llm_cfg, (LLMError, BudgetExceeded), resumed)
+            await shared_knowledge.run(self, executor, "final")  # the engines without a knowledge node; LangGraph's searches already ran
             await db.commit()
         namespace, report = final["namespace"], final["report"]
         mode = self.mode = final.get("mode") or mode
@@ -571,6 +583,7 @@ class Investigator:
         if final.get("unified"):
             payload["unified"] = final["unified"]
         await self._knowledge_outcome(report, payload, ledger, env_name, namespace)
+        shared_knowledge.outcome(self, report, payload)
         if self.similar.get("status") not in (None, "not_attempted") or self.similar.get("reason"):
             from ..ml.similar import NOTE as SIMILAR_NOTE
 
@@ -841,6 +854,24 @@ class Investigator:
         log.info("request routed", extra={"event": "request_routed", "investigation_id": str(self.id), "operation": req.primary, "workflow": req.workflow,
                                            "scope": req.scope, "unresolved": ",".join(req.unresolved), "classifier": req.classifier})
 
+    async def _triage_context(self, db, inv: Investigation, crew_request: dict[str, Any] | None) -> None:
+        """What started this run, as MOKS recorded it: the trigger, the incident and the alert that opened it. The shared
+        knowledge search builds its query from these (orchestrator/shared_knowledge.py); nothing here is model text."""
+        self.trigger, self.incident_id = inv.trigger, inv.incident_id
+        self.crew_request = crew_request
+        self.crew_workload = str(crew_request.get("workload") or "") or None if crew_request else None
+        ev = (await db.execute(select(AlertEvent).where(AlertEvent.investigation_id == inv.id).order_by(AlertEvent.received_at.desc()).limit(1))).scalars().first()
+        if inv.incident_id is not None:
+            inc = await db.get(Incident, inv.incident_id)
+            if inc is not None:
+                self.incident_info = {"id": str(inc.id), "title": inc.title, "summary": inc.summary or "", "severity": inc.severity, "namespace": inc.namespace,
+                                      "resource": inc.resource}
+                if ev is None and inc.fingerprint:  # attached to an alert incident later: the alert that opened it
+                    ev = (await db.execute(select(AlertEvent).where(AlertEvent.incident_id == inc.id, AlertEvent.status == "firing")
+                                           .order_by(AlertEvent.received_at.asc()).limit(1))).scalars().first()
+        if ev is not None:
+            self.alert_info = {"labels": dict(ev.labels or {}), "annotations": dict(ev.annotations or {}), "source": ev.source}
+
     async def _retrieve(self, executor: ToolExecutor, question: str, stage: str, namespace: str) -> None:
         """The knowledge stage. Runs in every mode, so documented procedures never depend on a planner asking.
         Searches are scoped like every other read: the investigation's namespace, or the target's once resolved."""
@@ -855,6 +886,7 @@ class Investigator:
         else:
             await self._emit("phase", {"phase": "knowledge", "label": "Searching the runbooks for these symptoms"})
         await knowledge.run(self, executor, stage, question)
+        await shared_knowledge.run(self, executor, stage)
 
     async def _similar_incidents(self, executor: ToolExecutor) -> None:
         """One bounded lookup of approved past incidents like this one, after triage named the symptoms. Through

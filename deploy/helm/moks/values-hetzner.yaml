@@ -195,6 +195,9 @@ networkPolicy:
     # service account only: api, worker and crewai, not the executor or the terminal.
     - namespace: embeddings
       ports: [11434]
+    # The shared moks-rag API (sharedKnowledge). rag-api's AuthorizationPolicy rag-api-callers admits namespace moks-sre.
+    - namespace: rag
+      ports: [8000]
 
 logCollector:
   enabled: true         # monitoring/alloy; also add "moks" to Alloy's namespaces in the tools repo
@@ -205,6 +208,12 @@ ecrRefresh:
 # CrewAI workload investigation (docs/crewai-investigation.md). On: the moks-crewai Argo CD app runs its worker
 # on .../moks-crewai:latest; api and the other workers stay on .../moks.
 crewai:
+  enabled: true
+
+# The shared SRE knowledge base in namespace rag (docs/SHARED_KNOWLEDGE.md). The pods read RAG_API_URL and
+# RAG_BEARER_TOKEN from Secret moks-rag-client, made by hand from rag/rag-secrets; until it exists they start
+# without them and triage runs on live evidence alone.
+sharedKnowledge:
   enabled: true
 
 # docs/RERANKING.md. CI moves latest on every master build, and a pod gets it when it restarts.

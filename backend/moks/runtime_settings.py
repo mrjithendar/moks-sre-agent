@@ -110,6 +110,11 @@ SPECS: dict[str, Spec] = {s.key: s for s in (
     Spec("rag_index_investigations", "knowledge", "Search past investigations",
          "Finished investigations become searchable history, readable only by those who may read the investigation. Off: the history is removed at the next sync.", "bool"),
     Spec("rag_history_days", "knowledge", "Investigation history reaches back", "Older investigations leave the history.", "int", 7, 3650, unit="days"),
+    Spec("shared_rag_enabled", "knowledge", "Search the shared SRE knowledge base (moks-rag)",
+         "Alert triage and root-cause analysis also search moks-rag's runbooks, postmortems and manifests (RAG_API_URL, RAG_BEARER_TOKEN). "
+         "Off: nothing is sent to moks-rag. It has no effect while those two are not set.", "bool"),
+    Spec("shared_rag_top_k", "knowledge", "Shared knowledge passages per search",
+         "How many passages one moks-rag search asks for. Empty: rag-api's own default.", "int", 1, 50, optional=True),
 )}
 
 _helm: dict[str, Any] = {}     # each key's value before this process first overrode it
@@ -279,7 +284,7 @@ SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Investigations", ("max_", "default_query", "investigation_", "intent_", "knowledge_", "guidance_", "evidence_", "auto_investigations")),
     ("LLM spend", ("llm_",)),
     ("Machine learning", ("ml_",)),
-    ("Knowledge search", ("rag_", "pinecone_")),
+    ("Knowledge search", ("rag_", "pinecone_", "shared_rag_")),
     ("CrewAI", ("crewai_",)),
     ("Secrets sync", ("secrets_",)),
     ("Terminal", ("terminal_",)),
@@ -307,7 +312,8 @@ def deployment() -> list[dict[str, Any]]:
     s = get_settings()
     groups: dict[str, list[dict[str, Any]]] = {}
     for key, field in Settings.model_fields.items():
-        item: dict[str, Any] = {"key": key, "env": f"MOKS_{key.upper()}", "editable": key in SPECS}
+        alias = getattr(field.validation_alias, "choices", None)  # read under another name, e.g. RAG_API_URL for moks-rag
+        item: dict[str, Any] = {"key": key, "env": str(alias[0]) if alias else f"MOKS_{key.upper()}", "editable": key in SPECS}
         value = helm_value(key) if key in SPECS else getattr(s, key)
         if not field.repr or key in SECRET_KEYS:
             item.update(secret=True, set=bool(value))

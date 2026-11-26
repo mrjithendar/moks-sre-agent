@@ -29,6 +29,10 @@ ANY_OF_CONNECTORS = {"datastore": ("postgres", "redis")}
 
 
 def has_connector(ctype: str, present) -> bool:
+    if ctype == "shared_knowledge":  # the shared moks-rag service: one deployment-wide client, there while it is configured and switched on
+        from ..rag import shared
+
+        return shared.enabled()
     return ctype in PSEUDO_CONNECTORS or ctype in present or any(c in present for c in ANY_OF_CONNECTORS.get(ctype, ()))
 
 

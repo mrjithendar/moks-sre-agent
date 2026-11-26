@@ -1,0 +1,37 @@
+# What this repository puts in the shared SRE knowledge base: moks-rag, namespace rag, collection sre_knowledge
+# (docs/SHARED_KNOWLEDGE.md). Read by `moks shared-kb sync` and by .github/workflows/shared-knowledge.yml, which sends the
+# files a push to master changed and deletes the ones it removed. Each file's doc_id is <repository name>:<path, with ":"
+# for "/">, e.g. moks-sre-agent:docs:OPERATOR_GUIDE.md.
+#
+# Markdown front matter adds metadata (service, severity, incident_id, date, environment, namespace, owner) and
+# `status: deprecated` (or `deprecated: true`) deletes the document from the collection at the next sync.
+# Never listed, whatever a glob says: Kubernetes Secret manifests, secrets/ directories, .env files and keys.
+repository: mrjithendar/moks-sre-agent
+branch: master
+service: moks-sre-agent
+sources:
+  - doc_type: runbook
+    include:
+      - docs/OPERATOR_GUIDE.md
+      - docs/runbooks/**/*.md
+  - doc_type: postmortem
+    include:
+      - docs/postmortems/**/*.md
+  - doc_type: architecture
+    include:
+      - docs/ARCHITECTURE.md
+      - docs/OBSERVABILITY.md
+      - docs/SECURITY.md
+      - docs/CLUSTER_BACKUPS.md
+      - docs/SHARED_KNOWLEDGE.md
+  - doc_type: manifest
+    include:
+      - deploy/helm/moks/values.yaml
+      - deploy/helm/moks/values-hetzner.yaml
+      - deploy/helm/moks/templates/networkpolicy.yaml
+      - deploy/helm/moks/templates/mesh.yaml
+      - deploy/helm/moks/templates/virtualservice.yaml
+      - deploy/argocd/hetzner/**/*.yaml
+exclude:
+  - deploy/secrets/**
+  - "**/*.example.yaml"

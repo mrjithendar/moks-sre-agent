@@ -10,6 +10,7 @@ import { CopyButton, Dialog, Drawer, Truncate } from "../ui";
 import { proposalPlan } from "./Conversations";
 import { PlanForm } from "./Ops";
 import { Judge, SimilarIncidents, SkillRecommendations } from "./MLParts";
+import { SharedKnowledge } from "./SharedKnowledge";
 import { CrewAIForm, CrewAIPanel, type CrewCapability, type UnifiedCapability } from "./CrewAI";
 import { LivePipeline, UnifiedPanel } from "../intelligence/UnifiedPanel";
 import { CrewProgress } from "../crewai/IncidentReport";
@@ -521,6 +522,7 @@ export function Report({ report, evidence = [], hideSummary, onCite, onPropose, 
       {report.next_steps.length > 0 && <Section title="Recommended next steps" count={report.next_steps.length}>
         <ul>{report.next_steps.map((m: string, i: number) => <li key={i}><Markdown text={m} /></li>)}</ul></Section>}
       <KnowledgeUsed k={report.knowledge} onCite={onCite} />
+      <SharedKnowledge s={report.shared_knowledge} onCite={onCite} />
       {report.skill_actions?.length > 0 && <Section title="Suggested actions from skills" count={report.skill_actions.length} open={false}>
         <ul>{report.skill_actions.map((a: any, i: number) => (
           <li key={i}><span className="mono">{a.action}</span>{a.target_name && <span className="mono small"> · {a.target_kind}/{a.target_name}</span>}

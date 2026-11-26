@@ -43,6 +43,7 @@ Helm sets every `MOKS_*` value at start-up. A small, curated set can also be cha
 | | `intent_llm_classifier` | switch |
 | LLM spend | `llm_user_daily_budget_usd`, `llm_investigation_budget_usd` (empty = no limit) | limit |
 | Knowledge search | `rag_query_expansion`, `rag_require_embedding_evaluation` ([EMBEDDINGS.md](EMBEDDINGS.md)) | switch |
+| | `shared_rag_enabled`, and `shared_rag_top_k` (empty = rag-api's default) ([SHARED_KNOWLEDGE.md](SHARED_KNOWLEDGE.md)) | switch |
 | Machine learning | `ml_anomaly_interval_minutes`, `ml_similar_incidents_k`, `ml_learning_retention_days` | schedule |
 | | `ml_learning_capture` | switch |
 | CrewAI | `crewai_timeout_seconds`, `crewai_max_iterations`, `crewai_max_tool_calls` | limit |

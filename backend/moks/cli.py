@@ -611,6 +611,9 @@ def main(argv: list[str] | None = None) -> None:
     ml.add_parser("index-incidents", help="write learning records for postmortems approved before learning records existed")
     ml.add_parser("purge", help="apply learning-record and dataset retention")
     ml.add_parser("evaluate-similar", help="similar-incident retrieval measured on reviewed operator judgments (read-only)")
+    from .rag import shared_ingest
+
+    shared_ingest.add_arguments(sub.add_parser("shared-kb", help="the shared SRE knowledge base, moks-rag (docs/SHARED_KNOWLEDGE.md): ingest, delete, sync, status"))
     a = p.parse_args(argv)
 
     if a.cmd == "migrate":
@@ -655,6 +658,8 @@ def main(argv: list[str] | None = None) -> None:
         print(benchmark.markdown(out))
     elif a.cmd == "reindex":
         asyncio.run(_reindex())
+    elif a.cmd == "shared-kb":
+        sys.exit(asyncio.run(shared_ingest.run(a)))
     elif a.cmd == "skills":
         asyncio.run(_skills(a))
     elif a.cmd == "ml":

@@ -236,6 +236,18 @@ rag:
   backend: postgres
   pinecone: {cloud: aws, region: us-east-1}
 
+# The shared SRE knowledge base, moks-rag (docs/SHARED_KNOWLEDGE.md): alert triage and root-cause analysis also search its
+# runbooks, postmortems and manifests, and approved postmortems are sent to it. On: api, worker and crewai read
+# RAG_API_URL and RAG_BEARER_TOKEN from `secret` (secretKeyRef, optional, so pods start without it and the integration
+# stays off), and RAG_COLLECTION from moks-config. The Secret is made by hand: see the doc. The egress to rag-api is a
+# networkPolicy.inCluster entry (namespace rag, port 8000) and rag-api's AuthorizationPolicy must admit this namespace.
+sharedKnowledge:
+  enabled: false
+  secret: moks-rag-client
+  urlKey: RAG_API_URL
+  tokenKey: RAG_BEARER_TOKEN
+  collection: sre_knowledge
+
 # Phase 3 executor: the only component with write access. It acts only in these namespaces
 # (one RoleBinding each, verbs limited to the allowlisted actions), plus diagnostics.namespace.
 executor:

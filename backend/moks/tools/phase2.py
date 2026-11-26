@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
@@ -209,6 +210,55 @@ async def kb_search(ctx: ToolContext, a: KbArgs) -> ToolResult:
     return ToolResult(summary, hits, {"index": r.get("index"), "citations": [h["citation"] for h in hits], "evidence": r["evidence"], "fallback_reason": r.get("fallback_reason"), "reranking": r.get("reranking"), "ranking": ranking,
                                       "mode": r.get("mode"), "latency_ms": r.get("latency_ms"), "note": r.get("note"),
                                       "scope": {"environment": ctx.environment.name, "namespace": ctx.focus_namespace or None}})
+
+
+ALERT_NAME = r"^[A-Za-z_:][A-Za-z0-9_:.-]{0,199}$"
+
+
+class SharedKbArgs(ToolArgs):
+    namespace: str | None = Field(default=None, pattern=K8S_NAME, max_length=63, description="the namespace the alert or incident is in")
+    alertname: str | None = Field(default=None, pattern=ALERT_NAME, description="the firing alert's name, e.g. KubePodCrashLooping")
+    workload: str | None = Field(default=None, pattern=K8S_NAME, max_length=253, description="the affected Deployment, StatefulSet, DaemonSet or Job")
+    pod: str | None = Field(default=None, pattern=K8S_NAME, max_length=253)
+    container: str | None = Field(default=None, pattern=K8S_NAME, max_length=63)
+    service: str | None = Field(default=None, pattern=K8S_NAME, max_length=253, description="the service label, when it differs from the workload")
+    errors: list[Annotated[str, Field(max_length=400)]] = Field(default_factory=list, max_length=12, description="key error or log lines, as seen")
+    text: str = Field(default="", max_length=600, description="the alert summary or the symptoms in a sentence")
+    k: int | None = Field(default=None, ge=1, le=50, description="passages wanted; empty: the configured number, or rag-api's default")
+
+
+async def shared_kb_search(ctx: ToolContext, a: SharedKbArgs) -> ToolResult:
+    """The shared SRE knowledge base (moks-rag, docs/SHARED_KNOWLEDGE.md): runbooks, postmortems and manifests for the
+    alert's names, codes and error lines. Read-only; what another environment or a namespace outside the person's scope
+    wrote is left out here, because the collection is shared."""
+    from ..config import get_settings
+    from ..rag import shared
+    from ..scope import ScopeError
+
+    client = shared.active()
+    if client is None:
+        raise ConnectorError("config", shared.why_off())
+    if a.namespace and not ctx.scope.allows(a.namespace):
+        raise ScopeError(f"namespace {a.namespace!r} is outside your scope in {ctx.environment.name!r}")
+    q = shared.build_query(shared.Triage(alertname=a.alertname, namespace=a.namespace, workload=a.workload, pod=a.pod, container=a.container,
+                                         service=a.service, errors=list(a.errors), text=a.text))
+    if len(q.text) < 2:
+        raise ConnectorError("bad_request", "nothing to search for: give an alert name, a workload, error lines or a summary")
+    started = time.monotonic()
+    try:
+        hits = await client.query(q.text, top_k=a.k or get_settings().shared_rag_top_k)
+    except shared.SharedRagError as exc:
+        raise ConnectorError(shared.CONNECTOR_KIND.get(exc.kind, "unavailable"), exc.message) from None
+    kept, dropped = shared.in_scope(hits, ctx.environment.name, ctx.scope.allows)
+    rows = [shared.view(p) for p in shared.prefer_exact(kept, q.identifiers)]
+    exact = sum(1 for r in rows if r["matched"])
+    summary = (f"{len(rows)} passage(s) from the shared SRE knowledge base (moks-rag {client.collection}) for {q.label or 'this triage'}"
+               + (f"; {exact} name the exact identifiers ({', '.join(q.identifiers[:4])})" if q.identifiers else "")
+               + (f"; {dropped} left out (another environment or a namespace outside your scope)" if dropped else "")
+               + ". Documented knowledge only: current state needs live evidence.")
+    return ToolResult(summary, rows, {"service": "moks-rag", "url": client.where(), "collection": client.collection, "query": q.text, "identifiers": q.identifiers,
+                                      "errors": q.errors, "returned": len(hits), "filtered_out": dropped, "latency_ms": int((time.monotonic() - started) * 1000),
+                                      "note": shared.NOTE, "scope": {"environment": ctx.environment.name, "namespace": a.namespace}})
 
 
 class SimilarArgs(ToolArgs):
@@ -540,6 +590,9 @@ TOOLS: list[ToolSpec] = [
     ToolSpec("git_read_file", "Read one file (manifest, config, runbook) from an allowed repository; secrets are never read.", "git", ReadFileArgs, git_read_file, cluster_scoped=True, namespace_arg=None),
     ToolSpec("git_compare_deployment", "Tie a running Deployment to its Git commit when image tags/annotations carry a SHA; never guesses.", "git", CompareDeployArgs, git_compare_deployment),
     ToolSpec("kb_search", "Search runbooks, docs, manifests and approved postmortems you may read (cited passages).", "knowledge", KbArgs, kb_search, namespace_arg=None),
+    ToolSpec("shared_kb_search", "Search the shared SRE knowledge base (moks-rag): runbooks, past postmortems and k3s/Helm/Istio manifests, ranked by the "
+             "exact alert name, error codes, exit codes and service names you pass. Documentation and history, never the current state.",
+             "shared_knowledge", SharedKbArgs, shared_kb_search, namespace_arg=None),  # the namespace is checked in the handler, and passages are scoped there
     ToolSpec("similar_incidents", "Approved past incidents with similar symptoms, signatures and services, with what differs and how they were resolved. "
              "Historical leads only: never evidence of the current cause.", "knowledge", SimilarArgs, similar_incidents, namespace_arg=None),  # ml.read is checked per incident in ml.similar
     ToolSpec("ml_anomalies", "Shadow-mode ML anomalies for a namespace or workload (type, resource, detection time, baseline, observed value, deviation, model "

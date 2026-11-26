@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -145,6 +145,13 @@ class Settings(BaseSettings):
     rag_query_signals: bool = True  # intent, services, environments and time a question names, as small ranking signals
     rag_index_investigations: bool = False  # finished investigations become searchable history, scoped like the investigation
     rag_history_days: int = 180  # how far back investigation history reaches
+    # The shared Hybrid RAG service, moks-rag (docs/SHARED_KNOWLEDGE.md). Read without the MOKS_ prefix: these are the names
+    # every moks-rag client uses. Off unless the URL and the token are both set; the token comes from a Kubernetes Secret.
+    shared_rag_url: str = Field(default="", validation_alias=AliasChoices("RAG_API_URL", "MOKS_SHARED_RAG_URL"))
+    shared_rag_token: str = Field(default="", repr=False, validation_alias=AliasChoices("RAG_BEARER_TOKEN", "MOKS_SHARED_RAG_TOKEN"))
+    shared_rag_collection: str = Field(default="sre_knowledge", validation_alias=AliasChoices("RAG_COLLECTION", "MOKS_SHARED_RAG_COLLECTION"))
+    shared_rag_enabled: bool = True  # Settings > Knowledge search: off sends nothing to moks-rag, even when it is configured
+    shared_rag_top_k: int | None = Field(default=None, ge=1, le=50)  # passages per search; empty: rag-api's own default
     evidence_max_age_seconds: int = 900  # older evidence cannot back a claim about the current state without saying so
     # Opt-in CrewAI workload investigation (docs/crewai-investigation.md). Off unless MOKS_CREWAI_ENABLED is true and the
     # image was built with the crewai extra. The global ceilings (max_tool_calls, max_duration_seconds) still apply.

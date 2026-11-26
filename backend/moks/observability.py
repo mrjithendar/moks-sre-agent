@@ -67,6 +67,9 @@ EMBEDDING_INPUTS = Counter("moks_rag_embedding_inputs_total", "Texts that needed
 RERANK_SECONDS = Histogram("moks_rerank_seconds", "Round trip to the reranking service", buckets=(0.02, 0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2))
 RERANK_CANDIDATES = Histogram("moks_rerank_candidates", "Authorized candidates sent for reranking", buckets=(1, 5, 10, 20, 30, 40, 50))
 RERANK_TRUNCATED = Counter("moks_rerank_truncated_passages_total", "Passages only partly scored")
+SHARED_RAG_CALLS = Counter("moks_shared_rag_calls_total", "Calls to the shared moks-rag service, by operation and outcome", ["operation", "outcome"])
+SHARED_RAG_SECONDS = Histogram("moks_shared_rag_seconds", "Round trip to the shared moks-rag service, by operation", ["operation"],
+                               buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8, 10))
 ML_INFERENCE_SECONDS = Histogram("moks_ml_inference_seconds", "Time to score one cohort window, by capability and algorithm", ["capability", "algorithm"])
 ML_OBSERVATIONS = Counter("moks_ml_observations_total", "Observations recorded, by capability and status", ["capability", "status"])
 ML_FALLBACKS = Counter("moks_ml_fallbacks_total", "ML paths that fell back to deterministic behavior, by capability and reason", ["capability", "reason"])

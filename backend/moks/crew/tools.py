@@ -70,6 +70,12 @@ class QueryArgs(Narrow):
     query: str = Field(min_length=2, max_length=300, description="what to look for in runbooks and docs")
 
 
+class SharedSearchArgs(Narrow):
+    query: str = Field(default="", max_length=300, description="the symptoms in a sentence")
+    errors: list[Annotated[str, Field(max_length=300)]] = Field(default_factory=list, max_length=8,
+                                                                description="exact error lines, reasons and codes the evidence shows, e.g. CrashLoopBackOff, exit code 137, ECONNREFUSED")
+
+
 class MetricArgs(Narrow):
     """One metric in the target's namespace. The namespace label is MOKS's; the model may filter on other labels only."""
     metric: str = Field(pattern=METRIC_NAME, description="a metric name, e.g. rabbitmq_queue_messages_ready or pg_stat_activity_count")
@@ -295,6 +301,9 @@ TOOLS: tuple[CrewTool, ...] = (
     CrewTool("similar_incidents", "similar_incidents", "", "Approved past incidents with similar symptoms on this workload, and how they were resolved. Historical leads, never proof.",
              SimilarArgs, lambda t, a, m: {"symptoms": list(a.symptoms), "services": [t.workload], "signature": list(a.signature), "text": a.text, "changes": a.changes, "k": 5},
              "knowledge"),
+    CrewTool("shared_runbooks", "shared_kb_search", "", "The shared SRE knowledge base (moks-rag): runbooks, past postmortems and k3s/Helm/Istio manifests for the "
+             "target workload, ranked by the exact error lines and codes you pass. Documentation and history, never the current state.",
+             SharedSearchArgs, lambda t, a, m: {"namespace": t.namespace, "workload": t.workload, "errors": list(a.errors), "text": a.query}, "shared_knowledge"),
     CrewTool("incident_history", "incident_history", "change", "Reviewed past incidents of the target workload: recurring failures, repeated infrastructure "
              "problems, runbooks and resolutions that worked. History, not evidence of the current state.",
              NoArgs, lambda t, a, m: {"namespace": t.namespace, "service": _cohort(t), "days": 180}, "knowledge"),
