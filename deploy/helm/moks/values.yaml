@@ -201,7 +201,7 @@ mesh:
 
 postgres:
   bundled: true            # false: point MOKS_DATABASE_URL at an external database (e.g. RDS)
-  image: postgres:17.11-alpine
+  image: postgres:17.12-alpine
   storage: 10Gi
   storageClass: ""
   nodeName: ""             # hostPath storage (minikube): pin to the node holding the volume
