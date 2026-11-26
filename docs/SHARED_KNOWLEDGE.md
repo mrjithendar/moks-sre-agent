@@ -14,13 +14,13 @@ source, searched only for triage.
 | Variable | Where it comes from | Meaning |
 |---|---|---|
 | `RAG_API_URL` | Secret `moks-rag-client`, key `RAG_API_URL` | `http://rag-api.rag.svc.cluster.local:8000` on mk4 |
-| `RAG_BEARER_TOKEN` | Secret `moks-rag-client`, key `RAG_BEARER_TOKEN` | rag-api's shared token (`rag/rag-secrets`) |
+| `RAG_BEARER_TOKEN` | Secret `moks-rag-client`, key `RAG_BEARER_TOKEN` | MOKS's own rag-api token (moks-rag `scripts/issue-service-token.sh moks-sre-agent`), or rag-api's shared token until it has one |
 | `RAG_COLLECTION` | `moks-config` (`sharedKnowledge.collection`) | `sre_knowledge` |
 
 The names carry no `MOKS_` prefix: they are the names every moks-rag client uses (`moks/config.py` reads them
 under `shared_rag_*`). Nothing is sent unless the URL and the token are both set. Settings > Knowledge search has two
-runtime values: **Search the shared SRE knowledge base** (off: nothing is sent) and **Shared knowledge passages per
-search** (empty: rag-api's own default).
+runtime values: **Search the shared SRE knowledge base** (off: nothing is sent), **Shared knowledge passages per
+search** (empty: rag-api's own default) and **Shared knowledge similarity floor** (empty: none; see Scores below).
 
 Every request carries `Authorization: Bearer <RAG_BEARER_TOKEN>` and `X-Service-Name: moks-sre-agent`. MOKS asks
 `POST /query` for passages only (`include_answer: false`): the answer is MOKS's own, under its claim validation, and
@@ -62,6 +62,13 @@ orders the passages by how many of them each one contains, with rag-api's order 
 
 A passage that names none of them is kept, ranked after those that do, and shown as "ranked by meaning".
 
+**Scores.** Each passage keeps two numbers from rag-api. `score` is the rank-fusion score: it orders one answer and
+says nothing about how similar a passage is, so nothing in MOKS compares it with a fixed number. `dense_score`
+(rag-api 0.2.0 and later; empty before) is the passage's cosine similarity to the query and can be compared across
+queries: the **Shared knowledge similarity floor** setting sends it as `min_dense_score`, and rag-api leaves out
+passages below it. Calibrate it from the `dense_score` values of passages you judge relevant and irrelevant before
+setting one; MOKS picks no number.
+
 **Scope.** The collection serves every MOKS environment with one token, so MOKS applies its own: a passage whose
 metadata names another environment, or a namespace the person may not read, is left out, and the report counts what
 was left out. Passages without an environment or namespace are general guidance.
@@ -88,7 +95,8 @@ Nothing fails because moks-rag does. The client (`rag/shared.py`):
 
 - has one 10-second deadline per call, covering the connection, the request and one retry made only when the
   connection itself failed (nothing was sent);
-- turns every failure into a kind: `unavailable`, `timeout`, `auth`, `bad_request`, `bad_response`, `not_configured`;
+- turns every failure into a kind: `unavailable`, `timeout`, `auth`, `bad_request`, `bad_response`, `not_configured`
+  (rag-api 0.2.0 names the dependency behind a 5xx, e.g. `HTTP 503 (bge-m3 unavailable)`);
 - stops asking for 30 seconds after three failures in a row, so an outage costs one wait, not one per investigation.
 
 The failed search is stored as failed evidence, the report's missing evidence says the triage rests on the alert,
@@ -139,14 +147,16 @@ the job is retried; `moks shared-kb postmortems` sends every approved one again 
 
 1. rag-api already admits namespace `moks-sre` (`rag-api-callers` AuthorizationPolicy in moks-rag
    `deploy/k8s/istio-routing.yaml`). MOKS must run in `moks-sre` with its sidecar, or the call is refused with 403.
-2. Copy the token into MOKS's namespace (a Secret cannot be read across namespaces):
+2. Give MOKS its own token. From a moks-rag checkout (rag-api 0.2.0 and later):
 
-       kubectl -n moks-sre create secret generic moks-rag-client \
-         --from-literal=RAG_API_URL=http://rag-api.rag.svc.cluster.local:8000 \
-         --from-literal=RAG_BEARER_TOKEN="$(kubectl -n rag get secret rag-secrets -o jsonpath='{.data.RAG_BEARER_TOKEN}' | base64 -d)"
+       scripts/issue-service-token.sh moks-sre-agent
 
-   ([deploy/secrets/moks-rag-client.example.yaml](../deploy/secrets/moks-rag-client.example.yaml).) When the token is
-   rotated in `rag-secrets`, update this Secret too.
+   It writes `RAG_BEARER_TOKEN` into Secret `moks-sre/moks-rag-client` (creating it with rag-api's cluster address as
+   `RAG_API_URL` if it is new; other keys are kept) and registers the token in rag-api, whose access policy lets
+   `moks-sre-agent` read and write `sre_knowledge` only.
+   ([deploy/secrets/moks-rag-client.example.yaml](../deploy/secrets/moks-rag-client.example.yaml).) Until then MOKS can
+   use rag-api's shared token (`rag/rag-secrets` key `RAG_BEARER_TOKEN`), which works only while rag-api still accepts
+   it. A 403 from rag-api now means the token may not use the collection (check `RAG_COLLECTION` and rag-api's policy).
 3. `values-hetzner.yaml` turns `sharedKnowledge` on: api, worker and crewai get the two variables by `secretKeyRef`
    (optional: without the Secret they start and triage on live evidence alone), and the NetworkPolicy allows egress to
    `rag:8000`. Restart the three Deployments after creating the Secret, since environment variables are read at start-up.

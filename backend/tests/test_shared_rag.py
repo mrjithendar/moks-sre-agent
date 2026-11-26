@@ -489,3 +489,59 @@ async def test_nothing_is_sent_and_nothing_is_said_while_moks_rag_is_not_configu
     sk = inv.report["shared_knowledge"]
     assert sk["status"] == "not_attempted" and "not configured" in sk["reason"] and sk["searches"] == []
     assert not any("moks-rag" in m for m in inv.report["missing_evidence"])
+
+
+# ---- rag-api 0.2.0 ---------------------------------------------------------------------------------------------
+
+
+async def test_dense_scores_are_read_and_the_floor_is_sent_only_when_set():
+    r = Rag(sources=[{**RUNBOOK, "dense_score": 0.71}, GENERIC])
+    hits = await client_for(r).query("payments CrashLoopBackOff", min_dense_score=0.4)
+    assert r.calls[0]["body"]["min_dense_score"] == 0.4
+    assert hits[0]["dense_score"] == 0.71 and hits[1]["dense_score"] is None  # an older rag-api sends none
+    assert shared.view(hits[0])["dense_score"] == 0.71
+    await client_for(r).query("q")
+    assert "min_dense_score" not in r.calls[-1]["body"]
+
+
+def test_the_similarity_floor_is_a_runtime_setting_and_empty_means_none():
+    from moks import runtime_settings as rs
+
+    spec = rs.SPECS["shared_rag_min_dense_score"]
+    assert spec.group == "knowledge" and spec.kind == "float"
+    assert rs.check(spec, "") is None and get_settings().shared_rag_min_dense_score is None
+    assert rs.check(spec, 0.5) == 0.5
+    with pytest.raises(rs.Invalid):
+        rs.check(spec, 1.5)
+
+
+async def test_a_scoped_token_refusal_and_a_failing_dependency_say_what_happened():
+    class Scoped(Rag):
+        def handler(self, req):
+            self.calls.append({"path": req.url.path})
+            if req.url.path == "/query":
+                return httpx.Response(403, json={"detail": "Service 'moks-sre-agent' may not read collection 'cms_content'"})
+            return httpx.Response(503, json={"detail": "bge-m3 unreachable (ConnectError)", "dependency": "bge-m3", "kind": "unavailable"})
+
+    r = Scoped()
+    with pytest.raises(shared.SharedRagError) as err:
+        await client_for(r).query("q")
+    assert err.value.kind == "auth" and "access policy" in err.value.message and "may not read" in err.value.message
+    with pytest.raises(shared.SharedRagError) as err:
+        await client_for(r).ingest({"doc_id": "moks-sre-agent:docs:x.md", "text": "t"})
+    assert err.value.kind == "unavailable" and "(bge-m3 unavailable)" in err.value.message
+
+
+async def test_sync_reports_documents_rag_api_found_unchanged(tmp_path):
+    class Unchanged(Rag):
+        def handler(self, req):
+            resp = super().handler(req)
+            if req.url.path == "/ingest":
+                body = resp.json()
+                return httpx.Response(200, json={**body, "unchanged": True, "chunks_ingested": 1})
+            return resp
+
+    cfg = _repo(tmp_path)
+    r = Unchanged()
+    out = await shared_ingest.sync(client_for(r), cfg, tmp_path, changed=["docs/runbooks/payments.md"])
+    assert [o.action for o in out] == ["unchanged"]

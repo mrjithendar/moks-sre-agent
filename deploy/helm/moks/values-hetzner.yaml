@@ -211,7 +211,8 @@ crewai:
   enabled: true
 
 # The shared SRE knowledge base in namespace rag (docs/SHARED_KNOWLEDGE.md). The pods read RAG_API_URL and
-# RAG_BEARER_TOKEN from Secret moks-rag-client, made by hand from rag/rag-secrets; until it exists they start
+# RAG_BEARER_TOKEN from Secret moks-rag-client (MOKS's own token: moks-rag scripts/issue-service-token.sh
+# moks-sre-agent; docs/SHARED_KNOWLEDGE.md "Setting it up on mk4"); until it exists they start
 # without them and triage runs on live evidence alone.
 sharedKnowledge:
   enabled: true

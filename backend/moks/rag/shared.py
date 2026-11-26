@@ -20,6 +20,11 @@ Ranking. rag-api fuses its dense and sparse rankings with RRF and takes no weigh
 most (CrashLoopBackOff, exit code 137, ECONNREFUSED, the service's name), so build_query() puts them at the front of the
 query, where BM25 matches them literally, and prefer_exact() orders what comes back by how many of them each passage
 contains, rag-api's order breaking ties. A passage that names none of them is kept, only ranked after those that do.
+
+Scores. `score` is rag-api's rank-fusion score: it orders one answer and says nothing about similarity. rag-api 0.2.0 also
+returns `dense_score`, the passage's cosine similarity to the query, which can be compared across queries; Settings >
+Knowledge search > Shared knowledge similarity floor (empty: none) asks rag-api to leave out passages below it. With an
+older rag-api `dense_score` is None and the floor is ignored there.
 """
 from __future__ import annotations
 
@@ -96,13 +101,17 @@ class SharedRag:
 
     # ---- operations ------------------------------------------------------------------------------------
 
-    async def query(self, text: str, *, top_k: int | None = None, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        """Ranked passages for `text`, best first, each with its rank in rag-api's order. Never asks moks-rag's model."""
+    async def query(self, text: str, *, top_k: int | None = None, filters: dict[str, Any] | None = None,
+                    min_dense_score: float | None = None) -> list[dict[str, Any]]:
+        """Ranked passages for `text`, best first, each with its rank in rag-api's order and its cosine similarity
+        (`dense_score`, None from rag-api < 0.2.0). Never asks moks-rag's model."""
         body: dict[str, Any] = {"collection": self.collection, "query": text[:MAX_QUERY_CHARS], "include_answer": False}
         if top_k:
             body["top_k"] = int(top_k)
         if filters:
             body["filters"] = filters
+        if min_dense_score is not None:
+            body["min_dense_score"] = float(min_dense_score)
         data = await self._request("query", "POST", "/query", json=body)
         sources = data.get("sources") if isinstance(data, dict) else None
         if not isinstance(sources, list):
@@ -116,8 +125,10 @@ class SharedRag:
                 score = float(s.get("score") or 0.0)
             except (TypeError, ValueError):
                 raise self._failed("query", "bad_response", f"rag-api source {rank} has a score that is not a number") from None
+            dense = s.get("dense_score")
+            dense = float(dense) if isinstance(dense, int | float) and not isinstance(dense, bool) else None
             out.append({"id": str(s.get("id") or ""), "doc_id": str(s.get("doc_id") or meta.get("doc_id") or ""), "score": score, "rank": rank,
-                        "text": s["text"], "metadata": meta})
+                        "dense_score": dense, "text": s["text"], "metadata": meta})
         return out
 
     async def ingest(self, doc: dict[str, Any]) -> dict[str, Any]:
@@ -186,15 +197,18 @@ class SharedRag:
             raise self._failed(op, "unavailable", f"moks-rag is unreachable at {self.where()} ({type(exc).__name__})") from None
         finally:
             SHARED_RAG_SECONDS.labels(op).observe(self._clock() - start)
-        if r.status_code in (401, 403):
-            raise self._failed(op, "auth", f"moks-rag refused the bearer token (HTTP {r.status_code}); check {ENV_TOKEN}", r.status_code)
+        if r.status_code == 401:
+            raise self._failed(op, "auth", f"moks-rag refused the bearer token (HTTP 401); check {ENV_TOKEN}", 401)
+        if r.status_code == 403:  # rag-api >= 0.2.0: a per-service token whose access policy leaves out this collection
+            raise self._failed(op, "auth", f"moks-rag does not let this token use collection {self.collection!r} (HTTP 403: {_detail(r)}); "
+                                           "check the moks-sre-agent entry of rag-api's access policy, or RAG_COLLECTION", 403)
         if r.status_code == 404:
             raise self._failed(op, "bad_request", f"moks-rag has no {path.split('?')[0]} at {self.where()}; check {ENV_URL}", 404)
         if r.status_code in (400, 409, 413, 422):  # our request, not the service: no reason to stop asking
             SHARED_RAG_CALLS.labels(op, "bad_request").inc()
             raise SharedRagError("bad_request", f"moks-rag refused the request (HTTP {r.status_code}): {_detail(r)}", r.status_code)
         if r.status_code != 200:
-            raise self._failed(op, "unavailable", f"moks-rag answered HTTP {r.status_code}", r.status_code)
+            raise self._failed(op, "unavailable", f"moks-rag answered HTTP {r.status_code}{_dependency(r)}", r.status_code)
         try:
             body = r.json()
         except ValueError:
@@ -202,6 +216,19 @@ class SharedRag:
         self._failures, self._open_until = 0, 0.0
         SHARED_RAG_CALLS.labels(op, "ok").inc()
         return body
+
+
+def _dependency(r: httpx.Response) -> str:
+    """rag-api >= 0.2.0 names the service behind it that failed (bge-m3, qdrant, docling-serve, litellm)."""
+    try:
+        body = r.json()
+    except ValueError:
+        return ""
+    dep = body.get("dependency") if isinstance(body, dict) else None
+    kind = body.get("kind") if isinstance(body, dict) else None
+    if not isinstance(dep, str) or not re.fullmatch(r"[a-z0-9-]{1,40}", dep):
+        return ""
+    return f" ({dep} {kind})" if isinstance(kind, str) and re.fullmatch(r"[a-z_]{1,20}", kind) else f" ({dep})"
 
 
 def _detail(r: httpx.Response) -> str:
@@ -475,7 +502,7 @@ _KIND_ALIASES = {"post-mortem": "postmortem", "postmortems": "postmortem", "inci
                  "runbooks": "runbook", "k8s_manifest": "manifest", "helm_values": "manifest", "helm_template": "manifest", "kustomize": "manifest",
                  "istio": "manifest", "architecture_doc": "architecture", "design": "architecture", "documentation": "document", "readme": "document"}
 META_KEPT = ("doc_type", "service", "severity", "incident_id", "date", "environment", "namespace", "path", "repository", "revision", "status", "chunk_index",
-             "chunk_count", "ingested_by")
+             "chunk_count", "ingested_by", "heading_path")
 
 
 def kind_of(p: dict[str, Any]) -> str:
@@ -535,7 +562,7 @@ def steps_of(text: str, limit: int = MAX_STEPS) -> list[str]:
 def view(p: dict[str, Any]) -> dict[str, Any]:
     """A passage as MOKS stores and shows it: text bounded, metadata reduced to what describes the document."""
     m = p.get("metadata") or {}
-    return {"id": p.get("id"), "doc_id": p.get("doc_id"), "rank": p.get("rank"), "score": p.get("score"), "kind": kind_of(p),
+    return {"id": p.get("id"), "doc_id": p.get("doc_id"), "rank": p.get("rank"), "score": p.get("score"), "dense_score": p.get("dense_score"), "kind": kind_of(p),
             "title": str(m.get("title") or m.get("filename") or p.get("doc_id") or "")[:300], "url": link_of(p), "matched": list(p.get("matched") or []),
             "steps": steps_of(p.get("text") or "") if kind_of(p) in ("runbook", "document", "architecture") else [],
             "text": redact(str(p.get("text") or ""))[:MAX_PASSAGE_CHARS], "metadata": {k: m[k] for k in META_KEPT if k in m}}

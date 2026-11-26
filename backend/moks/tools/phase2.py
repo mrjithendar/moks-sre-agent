@@ -246,7 +246,8 @@ async def shared_kb_search(ctx: ToolContext, a: SharedKbArgs) -> ToolResult:
         raise ConnectorError("bad_request", "nothing to search for: give an alert name, a workload, error lines or a summary")
     started = time.monotonic()
     try:
-        hits = await client.query(q.text, top_k=a.k or get_settings().shared_rag_top_k)
+        s = get_settings()
+        hits = await client.query(q.text, top_k=a.k or s.shared_rag_top_k, min_dense_score=s.shared_rag_min_dense_score)
     except shared.SharedRagError as exc:
         raise ConnectorError(shared.CONNECTOR_KIND.get(exc.kind, "unavailable"), exc.message) from None
     kept, dropped = shared.in_scope(hits, ctx.environment.name, ctx.scope.allows)
