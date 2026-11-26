@@ -152,6 +152,7 @@ class Settings(BaseSettings):
     shared_rag_collection: str = Field(default="sre_knowledge", validation_alias=AliasChoices("RAG_COLLECTION", "MOKS_SHARED_RAG_COLLECTION"))
     shared_rag_enabled: bool = True  # Settings > Knowledge search: off sends nothing to moks-rag, even when it is configured
     shared_rag_top_k: int | None = Field(default=None, ge=1, le=50)  # passages per search; empty: rag-api's own default
+    shared_rag_min_dense_score: float | None = Field(default=None, ge=-1.0, le=1.0)  # rag-api >= 0.2.0 cosine floor; empty: no floor
     evidence_max_age_seconds: int = 900  # older evidence cannot back a claim about the current state without saying so
     # Opt-in CrewAI workload investigation (docs/crewai-investigation.md). Off unless MOKS_CREWAI_ENABLED is true and the
     # image was built with the crewai extra. The global ceilings (max_tool_calls, max_duration_seconds) still apply.

@@ -207,7 +207,7 @@ async def push_postmortem(db: Any, incident_id: uuid.UUID, client: shared.Shared
     except shared.SharedRagError as exc:
         raise PushFailed(exc.kind, exc.message) from None
     await add_event(db, inc.id, "note", {"text": f"Postmortem added to the shared SRE knowledge base (moks-rag {client.collection})", "doc_id": doc["doc_id"]})
-    return {"doc_id": doc["doc_id"], "chunks": r.get("chunks_ingested")}
+    return {"doc_id": doc["doc_id"], "chunks": r.get("chunks_ingested"), "unchanged": r.get("unchanged") is True}
 
 
 class PushFailed(Exception):
@@ -221,11 +221,16 @@ class PushFailed(Exception):
 # ---- sync -------------------------------------------------------------------------------------------------------
 
 
+def _ingest_action(r: dict[str, Any]) -> str:
+    """rag-api >= 0.2.0 says when the stored version was identical (nothing embedded or written)."""
+    return "unchanged" if r.get("unchanged") is True else "ingested"
+
+
 @dataclass
 class Outcome:
     path: str
     doc_id: str
-    action: str  # ingested | deleted | refused | failed | would_ingest | would_delete
+    action: str  # ingested | unchanged | deleted | refused | failed | would_ingest | would_delete
     detail: str = ""
     chunks: int | None = None
 
@@ -268,7 +273,7 @@ async def sync(client: shared.SharedRag, cfg: Config, root: Path, *, changed: li
             continue
         try:
             r = await client.ingest(body)
-            out.append(Outcome(path, doc_id, "ingested", body["metadata"]["doc_type"], r.get("chunks_ingested")))
+            out.append(Outcome(path, doc_id, _ingest_action(r), body["metadata"]["doc_type"], r.get("chunks_ingested")))
         except shared.SharedRagError as exc:
             out.append(Outcome(path, doc_id, "failed", str(exc)))
     return out
@@ -344,7 +349,7 @@ async def run(a: argparse.Namespace, client: shared.SharedRag | None = None) -> 
                 continue
             try:
                 r = await client.ingest(body)
-                results.append(Outcome(rel, doc_id, "ingested", a.doc_type, r.get("chunks_ingested")))
+                results.append(Outcome(rel, doc_id, _ingest_action(r), a.doc_type, r.get("chunks_ingested")))
             except shared.SharedRagError as exc:
                 results.append(Outcome(rel, doc_id, "failed", str(exc)))
     elif a.shared_cmd == "sync":

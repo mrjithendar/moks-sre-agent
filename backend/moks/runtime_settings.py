@@ -115,6 +115,10 @@ SPECS: dict[str, Spec] = {s.key: s for s in (
          "Off: nothing is sent to moks-rag. It has no effect while those two are not set.", "bool"),
     Spec("shared_rag_top_k", "knowledge", "Shared knowledge passages per search",
          "How many passages one moks-rag search asks for. Empty: rag-api's own default.", "int", 1, 50, optional=True),
+    Spec("shared_rag_min_dense_score", "knowledge", "Shared knowledge similarity floor",
+         "moks-rag leaves out passages whose cosine similarity to the query (dense_score, -1 to 1) is below this. "
+         "Its other score ranks one answer's passages and cannot be compared with a fixed number. Empty: no floor.",
+         "float", -1, 1, optional=True),
 )}
 
 _helm: dict[str, Any] = {}     # each key's value before this process first overrode it
