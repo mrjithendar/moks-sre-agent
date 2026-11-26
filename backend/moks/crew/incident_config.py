@@ -34,7 +34,7 @@ TOOLS_BY_AGENT: dict[str, list[str]] = {
     "observability": ["service_signals", "search_logs", "trace_logs", "pod_metrics", "metric", "firing_alerts", "grafana_alerts", "dashboards",
                       "datastores", "postgres_health", "redis_health", "ml_signals"],
     "change": ["rollout_history", "changed_commits", "deployed_commit", "config_audit", "gitops_status", "recent_events"],
-    "knowledge": ["search_runbooks", "similar_incidents", "incident_history"],
+    "knowledge": ["search_runbooks", "shared_runbooks", "similar_incidents", "incident_history"],
     "reviewer": [],  # evidence_list and evidence_detail read the registry only and are always there
     "rca": [],
 }
@@ -133,7 +133,8 @@ def defaults() -> dict[str, Any]:
                                       "problems and Argo CD syncs in the change window.",
                        "expected_output": "Findings as JSON: each change with its time and evidence."},
             "knowledge": {"description": "Incident: {target}.\nSearch for similar past incidents and for runbooks that match the symptoms in the case file. "
-                                        "incident_history shows recurring failures of this workload and resolutions that worked before.",
+                                        "incident_history shows recurring failures of this workload and resolutions that worked before. shared_runbooks searches "
+                                        "the shared SRE knowledge base: pass it the exact error lines and codes the case file shows.",
                           "expected_output": "Findings as JSON: each lead with its evidence."},
             "hypotheses": {"description": "Incident: {target}.\nFrom the findings in the case file, write the root-cause hypotheses. For each, cite what supports "
                                           "and what contradicts it, and what evidence would settle it.",

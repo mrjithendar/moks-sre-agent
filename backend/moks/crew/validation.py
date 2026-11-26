@@ -41,7 +41,7 @@ POINT_IN_TIME = {"k8s_triage", "k8s_workloads", "k8s_list_pods", "k8s_describe_p
 # the cluster's state, logs, metrics, changes, dependencies or documentation.
 SIGNAL = {"k8s_pod_logs": "logs", "loki_search": "logs", "k8s_rollout_history": "changes", "git_recent_commits": "changes", "git_compare_deployment": "changes",
           "k8s_argocd_status": "changes", "k8s_config_audit": "configuration", "datastore_clusters": "dependencies", "pg_overview": "dependencies",
-          "redis_overview": "dependencies", "kb_search": "documentation", "similar_incidents": "documentation", "incident_history": "documentation",
+          "redis_overview": "dependencies", "kb_search": "documentation", "shared_kb_search": "documentation", "similar_incidents": "documentation", "incident_history": "documentation",
           "ml_anomalies": "model", "ml_observations": "model"}
 
 

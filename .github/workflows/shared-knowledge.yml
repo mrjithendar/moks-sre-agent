@@ -1,0 +1,81 @@
+name: shared-knowledge
+
+# Keeps this repository's runbooks, architecture docs and manifests current in the shared SRE knowledge base (moks-rag,
+# collection sre_knowledge; docs/SHARED_KNOWLEDGE.md#ingestion). On a push to master, the files deploy/shared-knowledge.yaml
+# covers that the push added or changed are ingested, and the ones it deleted (or renamed away) are deleted from the
+# collection. Run it by hand with "all" for the first load.
+#
+# Does nothing until the repository has variable RAG_INGEST_URL (rag-api as a GitHub runner reaches it, for example
+# https://jithendar.com/rag) and secret RAG_BEARER_TOKEN. It runs on pushes and by hand only, never on pull requests, so a
+# fork's code never runs with the token.
+
+on:
+  push:
+    branches: [master]
+    paths: ["docs/**", "deploy/**"]
+  workflow_dispatch:
+    inputs:
+      all:
+        description: Send every file deploy/shared-knowledge.yaml covers
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shared-knowledge
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    env:
+      RAG_API_URL: ${{ vars.RAG_INGEST_URL }}
+      RAG_BEARER_TOKEN: ${{ secrets.RAG_BEARER_TOKEN }}
+      RAG_COLLECTION: ${{ vars.RAG_COLLECTION || 'sre_knowledge' }}
+    steps:
+      - name: Configured?
+        id: configured
+        run: |
+          if [[ -z "$RAG_API_URL" || -z "$RAG_BEARER_TOKEN" ]]; then
+            echo "::notice::Set variable RAG_INGEST_URL and secret RAG_BEARER_TOKEN to keep moks-rag in sync (docs/SHARED_KNOWLEDGE.md)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.configured.outputs.run == 'true'
+        with: {fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-python@v7
+        if: steps.configured.outputs.run == 'true'
+        with: {python-version: "3.12"}
+      - name: What the push changed
+        if: steps.configured.outputs.run == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          : > "$RUNNER_TEMP/changed"; : > "$RUNNER_TEMP/deleted"
+          if [[ "$EVENT" == "push" && -n "$BEFORE" && "$BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+            git diff --name-status -M "$BEFORE" "$GITHUB_SHA" | while IFS=$'\t' read -r status a b; do
+              case "$status" in
+                D) echo "$a" >> "$RUNNER_TEMP/deleted" ;;
+                R*) echo "$a" >> "$RUNNER_TEMP/deleted"; echo "$b" >> "$RUNNER_TEMP/changed" ;;
+                *) echo "$a" >> "$RUNNER_TEMP/changed" ;;
+              esac
+            done
+          fi
+      - name: Sync with moks-rag
+        if: steps.configured.outputs.run == 'true'
+        working-directory: backend
+        env:
+          ALL: ${{ inputs.all }}
+        run: |
+          pip install -q -r requirements.txt
+          mapfile -t changed < "$RUNNER_TEMP/changed"
+          mapfile -t deleted < "$RUNNER_TEMP/deleted"
+          args=(--root .. --revision "$GITHUB_SHA")
+          [[ "$ALL" == "true" ]] && args+=(--all)
+          python -m moks.cli shared-kb sync "${args[@]}" --changed "${changed[@]}" --deleted "${deleted[@]}"

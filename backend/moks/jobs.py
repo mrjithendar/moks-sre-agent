@@ -57,9 +57,10 @@ POLICIES: dict[str, Policy] = {
     "secret_compare": Policy(2, True),      # read-only; the plan waits in comparing until it finishes
     "secret_execute": Policy(1, False),     # items keep their write state; a person retries them after reading the outcome
     "secret_reveal": Policy(1, False),      # a person asks again; the encrypted result is for one browser key
+    "shared_kb_push": Policy(4, True),      # one document into moks-rag by a stable doc_id: a repeat replaces it
 }
 DEFAULT_POLICY = Policy(3, False)
-JOB_CLASSES = {"detection_tick": "detection", "alert_poll": "detection", "knowledge_sync": "knowledge", "knowledge_reindex": "knowledge",
+JOB_CLASSES = {"detection_tick": "detection", "alert_poll": "detection", "knowledge_sync": "knowledge", "knowledge_reindex": "knowledge", "shared_kb_push": "knowledge",
                "secret_discover": "secrets", "secret_compare": "secrets", "secret_execute": "secrets", "secret_reveal": "secrets"}
 CLASSES = ("detection", "knowledge", "maintenance")  # the order a worker fills its capacity in
 EXECUTOR_CLASS = "secrets"  # claimed only by the executor, the one process with secret access; never by a worker
@@ -103,6 +104,16 @@ async def enqueue(type_: str, payload: dict[str, Any], *, dedupe_key: str | None
             return job.id
     except IntegrityError:
         return None
+
+
+def add(db: AsyncSession, type_: str, payload: dict[str, Any], *, dedupe_key: str | None = None, created_by=None) -> Job:
+    """Queue a job in the caller's transaction, so it exists only if what asked for it commits (an approval, say).
+    The queue limit is not checked: use this for one job per person's action, never for scheduled work."""
+    parent = traceparent()
+    job = Job(type=type_, job_class=job_class(type_), payload={**payload, **({"_traceparent": parent} if parent else {})}, dedupe_key=dedupe_key,
+              created_by=created_by, run_after=datetime.now(timezone.utc))
+    db.add(job)
+    return job
 
 
 async def claim(worker_id: str, cls: str | None = None) -> uuid.UUID | None:
@@ -261,6 +272,11 @@ def handlers() -> dict[str, Handler]:
 
         return await learning.purge(db)
 
+    async def shared_kb_push(db: AsyncSession, p: dict) -> dict:
+        from .rag import shared_ingest
+
+        return await shared_ingest.push_postmortem(db, uuid.UUID(p["incident_id"]))
+
     async def secret_job(db: AsyncSession, p: dict) -> dict:
         from .secrets import tasks as secret_tasks
 
@@ -271,7 +287,7 @@ def handlers() -> dict[str, Handler]:
 
     return {"secret_discover": secret_job, "secret_compare": secret_job, "secret_execute": secret_job, "secret_reveal": secret_job,
             "detection_tick": detection_tick, "knowledge_sync": knowledge_sync, "knowledge_reindex": knowledge_reindex, "alert_poll": alert_poll, "eval_run": eval_run,
-            "ml_anomaly_tick": ml_anomaly_tick, "ml_anomaly_train": ml_anomaly_train, "learning_purge": learning_purge}
+            "ml_anomaly_tick": ml_anomaly_tick, "ml_anomaly_train": ml_anomaly_train, "learning_purge": learning_purge, "shared_kb_push": shared_kb_push}
 
 
 async def run_one(job_id: uuid.UUID) -> None:

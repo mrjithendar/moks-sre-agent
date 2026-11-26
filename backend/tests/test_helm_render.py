@@ -53,7 +53,8 @@ TERMINAL = (
 def test_default_render_changes_nothing_for_existing_installs(values):
     docs = render(values)
     by = dict(pods(docs))
-    assert secrets(by["moks-api"]) == {"moks-secrets"} and by["moks-api"]["serviceAccountName"] == "moks"
+    shared = {"moks-rag-client"} if values == "values-hetzner.yaml" else set()  # mk4 turns sharedKnowledge on (optional keys)
+    assert secrets(by["moks-api"]) == {"moks-secrets"} | shared and by["moks-api"]["serviceAccountName"] == "moks"
     assert by["moks-api"]["initContainers"][0]["name"] == "migrate"
     assert not any(d["kind"] == "Job" for d in docs)
 
@@ -81,8 +82,8 @@ def test_config_changes_still_roll_consumers_though_only_foundation_renders_the_
 
 def test_each_component_gets_only_its_secret():
     by = dict(pods(render("values-hetzner.yaml", *SPLIT, SYNC_OFF, BUNDLED)))
-    assert secrets(by["moks-api"]) == {"moks-api-secrets"}
-    assert secrets(by["moks-worker"]) == {"moks-worker-secrets"}
+    assert secrets(by["moks-api"]) == {"moks-api-secrets", "moks-rag-client"}  # moks-rag's URL and token (sharedKnowledge), nothing else
+    assert secrets(by["moks-worker"]) == {"moks-worker-secrets", "moks-rag-client"}
     assert secrets(by["moks-executor"]) == {"moks-executor-secrets"}
     assert secrets(by["moks-backup"]) == {"moks-backup"}
     assert not any("moks-migrate-secrets" in secrets(p) for n, p in by.items() if not n.startswith("moks-migrate"))
@@ -227,7 +228,7 @@ def test_mtls_needs_a_gateway_identity():
 
 def test_minikube_keeps_one_worker_with_reserved_capacity():
     by = dict(pods(render("values-hetzner.yaml")))
-    env = {e["name"]: e["value"] for e in by["moks-worker"]["containers"][0]["env"]}
+    env = {e["name"]: e.get("value") for e in by["moks-worker"]["containers"][0]["env"]}
     assert "detection=2" in env["MOKS_WORKER_CAPACITY"] and "moks-worker-detection" not in by
 
 
@@ -585,3 +586,32 @@ def test_mk4_runs_the_embedding_service_beside_bge_m3_without_switching_search()
 
 def test_the_embedding_service_is_off_by_default():
     assert "moks-embedder" not in dict(pods(render("values.yaml")))
+
+
+SHARED_READERS = ("moks-api", "moks-worker", "moks-crewai")
+
+
+def test_shared_knowledge_reads_its_url_and_token_from_a_secret_and_reaches_only_rag_api():
+    """docs/SHARED_KNOWLEDGE.md: RAG_API_URL and RAG_BEARER_TOKEN by secretKeyRef (optional: pods start without the Secret),
+    RAG_COLLECTION from moks-config, egress to rag:8000. Only the pods that search or feed moks-rag get the token."""
+    docs = render("values-hetzner.yaml")
+    by = dict(pods(docs))
+    for name in SHARED_READERS:
+        env = {e["name"]: e for c in by[name]["containers"] for e in c.get("env", [])}
+        for var in ("RAG_API_URL", "RAG_BEARER_TOKEN"):
+            assert env[var]["valueFrom"]["secretKeyRef"] == {"name": "moks-rag-client", "key": var, "optional": True}, (name, var)
+    for name, pod in by.items():
+        if name not in SHARED_READERS:
+            assert "moks-rag-client" not in secrets(pod), name  # never the executor, the terminal, backups or migrations
+    assert of(docs, "ConfigMap", "moks-config")["data"]["RAG_COLLECTION"] == "sre_knowledge"
+    rag = {"to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "rag"}}}], "ports": [{"port": 8000, "protocol": "TCP"}]}
+    assert rag in of(docs, "NetworkPolicy", "moks")["spec"]["egress"]
+    named = render("values-hetzner.yaml", "sharedKnowledge.secret=rag-client", "sharedKnowledge.collection=sre_knowledge_v2")
+    assert of(named, "ConfigMap", "moks-config")["data"]["RAG_COLLECTION"] == "sre_knowledge_v2"
+    assert "rag-client" in secrets(dict(pods(named))["moks-api"])
+
+
+def test_shared_knowledge_is_off_unless_enabled():
+    docs = render("values-eks.yaml")
+    assert not any(e["name"].startswith("RAG_") for _, p in pods(docs) for c in p["containers"] for e in c.get("env", []))
+    assert "RAG_COLLECTION" not in of(docs, "ConfigMap", "moks-config")["data"]

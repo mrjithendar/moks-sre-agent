@@ -327,6 +327,9 @@ Retrieval is a stage of every investigation, not a planner's choice (`orchestrat
 
     intake -> knowledge -> triage -> logs -> skills -> refresh -> plan/act or rules -> correlate -> report
 
+Triage also searches the shared moks-rag service at the knowledge and refresh stages, as a second source:
+[SHARED_KNOWLEDGE.md](SHARED_KNOWLEDGE.md).
+
 - **knowledge** runs before anything live is read, with or without a model. It searches the original question and,
   when it adds anything, a second query built from what MOKS resolved: target, repository, namespace and, for a
   short follow-up such as "how do I fix it?", the words of the turn before.
