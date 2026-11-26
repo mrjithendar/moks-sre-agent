@@ -6,4 +6,4 @@
 # instantiates their clients (memory, knowledge and planning are off), but they are in the image.
 # Exactly the version moks/crew/__init__.py PINNED names: MOKS refuses any other (docs and source are checked
 # per release). Dependabot proposes crewai in its own group; raise PINNED and this pin together, after that check.
-crewai==1.15.44
+crewai==1.15.41

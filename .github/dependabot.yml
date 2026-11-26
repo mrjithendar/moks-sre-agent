@@ -37,11 +37,12 @@ updates:
       aws:
         patterns: [boto3, botocore]
       # Its own PR, never in python-minor-patch: MOKS runs only the crewai release named in moks/crew PINNED,
-      # so a bump needs that constant and a read of the release (#53 bundled 1.15.41 and broke the crewai job).
+      # so a bump needs that constant and a read of the release (#53 and #104 bundled it and broke the crewai job).
       crewai:
         patterns: [crewai]
       python-minor-patch:
         update-types: [minor, patch]
+        exclude-patterns: [crewai]
 
   # Frontend: frontend/package.json + package-lock.json
   - package-ecosystem: npm
