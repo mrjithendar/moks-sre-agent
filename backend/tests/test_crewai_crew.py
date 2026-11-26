@@ -122,7 +122,7 @@ def happy(script_report=REPORT) -> Script:
 async def test_capability_reports_available_with_the_flag_and_a_model(client, crew_on):
     await start(client)
     cfg = (await client.get("/moks/api/investigate/config")).json()["crewai"]
-    assert cfg["available"] is True and cfg["version"] == "1.15.41" and cfg["llm"] == "openai/m"
+    assert cfg["available"] is True and cfg["version"] == "1.15.44" and cfg["llm"] == "openai/m"
 
 
 async def test_a_crew_report_cites_only_recorded_evidence(client, crew_on):
